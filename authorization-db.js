@@ -10,13 +10,15 @@
 // Keep track about "stuff" I learn from the users in a hosted Mongo DB
 var mongo_client = require('mongodb').MongoClient;
 var mConfig = {};
-if ((process.env.MONGO_USER) && (process.env.MONGO_PW)) {
+if ((process.env.MONGO_USER) && (process.env.MONGO_PW) &&
+  (process.env.MONGO_URL) && (process.env.MONGO_DB)) {
   mConfig.mongoUser = process.env.MONGO_USER;
   mConfig.mongoPass = process.env.MONGO_PW;
   mConfig.mongoUrl = process.env.MONGO_URL;
   mConfig.mongoDb = process.env.MONGO_DB;
 } else {
   // sets config and the mongo DB vars for dev instances.
+  console.error('Unable to read DB Config from environment');
   mConfig = require("./mongo.json");
 }
 var mongo_collection_name ="AuthUserData";
@@ -389,4 +391,3 @@ class AuthorizationDB {
 }
   
 module.exports = AuthorizationDB;
-    
