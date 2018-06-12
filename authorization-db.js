@@ -18,7 +18,7 @@ if ((process.env.MONGO_USER) && (process.env.MONGO_PW) &&
   mConfig.mongoDb = process.env.MONGO_DB;
 } else {
   // sets config and the mongo DB vars for dev instances.
-  console.error('Unable to read DB Config from environment');
+  console.error('Unable to read DB Config from environment.  Will look for a local config');
   mConfig = require("./mongo.json");
 }
 var mongo_collection_name ="AuthUserData";
@@ -110,7 +110,7 @@ class AuthorizationDB {
               console.log('Found ' + reply.authInfoArray.length + 
                           ' Authorized Users in Space: ' +
                           reply.authInfoArray[0].roomTitle);
-              console.log(reply.authInfoArray[0].auth_token);
+              console.log(reply.authInfoArray[0].access_token);
               resolve(reply.authInfoArray);
             } else {
               console.log("No Authorized Users saved in DB for this space.");
