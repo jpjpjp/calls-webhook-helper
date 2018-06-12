@@ -1,0 +1,27 @@
+{
+  "name": "calls-helper"
+  "version": "1.0.0",
+  "description": "Bot/Ingetration for registering for a /calls Webhook and posting webhook information to a space
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "keywords": [
+    "Cisco",
+    "Cisco Spark",
+    "Webex",
+    "Webex Teams",
+    "Cisco Webex Teams"
+  ],
+  "author": "JP Shipherd",
+  "license": "ISC",
+  "dependencies": {
+    "body-parser": "^1.18.0",
+    "express": "^4.15.4",
+    "mongodb": "^2.2.31",
+    "node-flint": "^4.5.6",
+    "node-sparky": "^4.6.0",
+    "underscore": "^1.8.3",
+    "when": "^3.7.8"
+  }
+}
