@@ -1,5 +1,5 @@
 {
-  "name": "calls-helper"
+  "name": "calls-helper",
   "version": "1.0.0",
   "description": "Bot/Ingetration for registering for a /calls Webhook and posting webhook information to a space
   "main": "server.js",
