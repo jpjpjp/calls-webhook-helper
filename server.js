@@ -19,13 +19,20 @@ var app = express();
 
 // Set the config vars for the environment we are running in
 var config = {};
-if ((process.env.WEBHOOK) && (process.env.TOKEN) ||
-    (process.env.AUTHLINK) && (process.env.CLIENT_ID) && (process.env.CLIENT_SECRET)) {
-  config.webhookUrl = process.env.WEBHOOK;
-  config.token = process.env.TOKEN;
-  config.authLink = process.env.AUTHLINK;
-  config.client_id = process.env.CLIENT_ID;
-  config.client_secret = process.env.CLIENT_SECRET;
+// if ((process.env.WEBHOOK) && (process.env.TOKEN) ||
+//     (process.env.AUTHLINK) && (process.env.CLIENT_ID) && (process.env.CLIENT_SECRET)) {
+//   config.webhookUrl = process.env.WEBHOOK;
+//   config.token = process.env.TOKEN;
+//   config.authLink = process.env.AUTHLINK;
+//   config.client_id = process.env.CLIENT_ID;
+//   config.client_secret = process.env.CLIENT_SECRET;
+if ((process.env.webhookUrl) && (process.env.token) ||
+    (process.env.authLink) && (process.env.client_id) && (process.env.client_secret)) {
+  config.webhookUrl = process.env.webhookUrl;
+  config.token = process.env.token;
+  config.authLink = process.env.authLink;
+  config.client_id = process.env.client_id;
+  config.client_secret = process.env.client_secret;
 } else {
   // sets config for this instance of the bot.
   console.log('Unable to read config from environment');
