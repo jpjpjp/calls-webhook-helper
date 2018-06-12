@@ -45,6 +45,7 @@ class CallStuff {
    * side effect -- sends response under error conditions
    */
   oAuthDance(req, res, flint) {
+    let self = this;
     return new Promise(function(resolve, reject) {
       // Did the user decline
       if (req.query.error) {
@@ -85,11 +86,11 @@ class CallStuff {
           'content-type': 'application/x-www-form-urlencoded' },
         form: 
         { grant_type: 'authorization_code',
-          client_id: 'C7afc0a91f2b78720b5b079159123b20f69295dc489dceeced55ee61faf996f38',
-          client_secret: '4cb2ec286084c5a0374b1def973ddf5b335ec26bfbad01c684ea771eb6501d7d',
+          client_id: self.config.client_id,
+          client_secret: self.config.client_secret,
           //code: 'ZDcyYTAxOWYtYjFjMy00N2M4LTg5NDktOTVhMGUxZTkyYzJlZDk0YjQ5MTgtMWM3',
           code: req.query.code,
-          redirect_uri: 'https://addPhoneToSpace.ngrok.io/auth'
+          redirect_uri: self.config.webhookUrl + '/auth'
 
         } 
       };
@@ -161,7 +162,7 @@ class CallStuff {
       let callsWebhookOptions = {
         resource: 'calls',
         event: 'created',
-        targetUrl: 'https://addPhoneToSpace.ngrok.io/callsWebhook',
+        targetUrl: self.config.webhookUrl + '/callsWebhook',
         name: 'Something went wrong if you see this' // Will be set below
       };
       
@@ -194,9 +195,10 @@ class CallStuff {
           // First lets get rid of any previously registered webhooks
           return self.webex_sdk.webhooksGet()
             .then((webhooks) => {
+              let ourUrl = self.config.webhookUrl + '/callsWebhook';
               when.map(webhooks, webhook => {
                 // TODO make this more configurable -- EVERYWHERE
-                if ((webhook.targetUrl == "https://addPhoneToSpace.ngrok.io/callsWebhook") &&
+                if ((webhook.targetUrl == ourUrl) &&
                     ((webhook.resource == "calls") || (webhook.resource == "callMemberships")) && 
                     (webhook.secret.includes(auth_info.roomId)) &&
                     (webhook.name.includes(auth_info.person.id))) {
@@ -348,9 +350,10 @@ class CallStuff {
             this.webex_sdk.setToken(authUsersArray[i].access_token)
               .then(() => self.webex_sdk.webhooksGet())
               .then((webhooks) => {
+                let ourUrl = self.config.webhookUrl + '/callsWebhook';
                 when.map(webhooks, webhook => {
                   // TODO make this more configurable -- EVERYWHERE
-                  if ((webhook.targetUrl == "https://addPhoneToSpace.ngrok.io/callsWebhook") &&
+                  if ((webhook.targetUrl == ourUrl) &&
                       ((webhook.resource == "calls") || (webhook.resource == "callMemberships")) && 
                       (webhook.secret.includes(auth_info.roomId)) &&
                       (webhook.name.includes(auth_info.person.id))) {
@@ -395,7 +398,11 @@ class CallStuff {
    * @param {string} roomId - roomId returned in the secret field of the webhook payload
    */
   getAuthorizedUsersForRoom(roomId) {
-    return this.authDb.getAuthorizedUsers(roomId);
+    return this.authDb.getAuthorizedUsers(roomId)
+      .catch((e) => {
+        console.log('getAuthorizedUsers error: '+e.message);
+        return new Promise.resolve(null);
+      });
   }
 
   /**

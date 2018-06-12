@@ -19,11 +19,16 @@ var app = express();
 
 // Set the config vars for the environment we are running in
 var config = {};
-if ((process.env.WEBHOOK) && (process.env.TOKEN)) {
+if ((process.env.WEBHOOK) && (process.env.TOKEN) ||
+    (process.env.AUTHLINK) && (process.env.CLIENT_ID) && (process.env.CLIENT_SECRET)) {
   config.webhookUrl = process.env.WEBHOOK;
   config.token = process.env.TOKEN;
+  config.authLink = process.env.AUTHLINK;
+  config.client_id = process.env.CLIENT_ID;
+  config.client_secret = process.env.CLIENT_SECRET;
 } else {
   // sets config for this instance of the bot.
+  console.log('Unable to read config from environment');
   config = require("./config.json");
 }
 if (process.env.PORT) {
@@ -131,20 +136,19 @@ function postInstructions(bot, status_only=false, instructions_only=false) {
   callStuff.getAuthorizedUsersForRoom(bot.room.id)
     .then((authUserArray) => {
       let statusMsg = '';
-      if (authUserArray.length) {
+      if ((authUserArray) && (authUserArray.length)) {
         statusMsg = '\n\nThe following people have authorized me:\n\n';
         for (i=0; i<authUserArray.length; i++) {
-          statusMsg += '* '+authUserArray.person.displayName+'\n';
+          statusMsg += '* '+authUserArray[i].person.displayName+'\n';
         }
         statusMsg += '\n\nOther users can authorize me via this link:';
       } else {
         statusMsg = "\n\nFor this to work the user in question must authorize me to do this with this link:";
       }
+      statusMsg += "\n\n"+config.authLink; 
       if (!status_only) {
         bot.say("I can post call and callmembership webhook info for users in this space." +
-            + statusMsg +
-            "\n\nhttps://api.ciscospark.com/v1/authorize?client_id=C7afc0a91f2b78720b5b079159123b20f69295dc489dceeced55ee61faf996f38&response_type=code&redirect_uri=https%3A%2F%2FaddPhoneToSpace.ngrok.io%2Fauth&scope=spark%3Amemberships_read%20spark%3Akms%20spark%3Apeople_read%20spark%3Arooms_read%20spark-admin%3Acall_memberships_read%20spark%3Amessages_write%20spark%3Acalls_read%20spark%3Amessages_read%20spark%3Acall_memberships_read%20spark-admin%3Acalls_read&state=" +
-            bot.room.id + '\n\n' +
+            statusMsg + bot.room.id + '\n\n' +
             '\n\n To remove all the authorizations for this room type **/deleteall**' +
             '\n\n To see this message and link again type **/help**');
         //TODO - Add more, how do I turn this off for example?
@@ -181,6 +185,8 @@ flint.hears(/(^| )\/help( |.|$)/i, function(bot) {
 flint.hears(/(^| )\/deleteall( |.|$)/i, function(bot) {
   flint.debug('Processing /deleteall Request for ' + bot.room.title);
   callStuff.deleteAllAuthoritizations(bot.room.id);
+  bot.say('No more call webhook events will be posted to this room.\n' +
+    'Type **/help** to see the authorization link again.');
   responded = true;
 });
 
