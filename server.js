@@ -26,6 +26,7 @@ var config = {};
 //   config.authLink = process.env.AUTHLINK;
 //   config.client_id = process.env.CLIENT_ID;
 //   config.client_secret = process.env.CLIENT_SECRET;
+console.log(process.env);
 if ((process.env.webhookUrl) && (process.env.token) ||
     (process.env.authLink) && (process.env.client_id) && (process.env.client_secret)) {
   config.webhookUrl = process.env.webhookUrl;
