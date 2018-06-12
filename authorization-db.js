@@ -110,6 +110,7 @@ class AuthorizationDB {
               console.log('Found ' + reply.authInfoArray.length + 
                           ' Authorized Users in Space: ' +
                           reply.authInfoArray[0].roomTitle);
+              console.log(reply.authInfoArray[0].auth_token);
               resolve(reply.authInfoArray);
             } else {
               console.log("No Authorized Users saved in DB for this space.");
