@@ -107,10 +107,11 @@ class AuthorizationDB {
                 throw new Error('Authorized Users DB has invalid info for space: ' + 
                                 auth_info.roomId);
               }
-              console.log('Found ' + reply.authInfoArray.length + 
-                          ' Authorized Users in Space: ' +
-                          reply.authInfoArray[0].roomTitle);
-              console.log(reply.authInfoArray[0].access_token);
+              // console.log('Found ' + reply.authInfoArray.length + 
+              //             ' Authorized Users in Space: ' +
+              //             reply.authInfoArray[0].roomTitle);
+              // Use this only in case of emergencies!
+              // console.log(reply.authInfoArray[0].access_token);
               resolve(reply.authInfoArray);
             } else {
               console.log("No Authorized Users saved in DB for this space.");

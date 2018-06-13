@@ -19,7 +19,7 @@ const AuthorizationDB = require('./authorization-db.js');
 
 class CallStuff {
   constructor(config) {
-    this.myUserAuthorizations = [];
+//    this.myUserAuthorizations = [];
     this.config = config;
     this.authDb = new AuthorizationDB();
     this.webex_sdk = new nodeSparky({
@@ -300,7 +300,7 @@ class CallStuff {
       if (auth_info.bot) {
         delete auth_info.bot;
       }
-      self.myUserAuthorizations.push(auth_info);
+      //self.myUserAuthorizations.push(auth_info);
 
       // Store this in a db and return our promise of a new auth_info
       self.authDb.saveAuthInfo(auth_info)
@@ -347,6 +347,7 @@ class CallStuff {
           for (let i=0; i<authUsersArray.length; i++) {
             // Its not clear that this is working
             // TODO see if I can use await to fix this
+            let personId = authUsersArray[i].person.id;
             this.webex_sdk.setToken(authUsersArray[i].access_token)
               .then(() => self.webex_sdk.webhooksGet())
               .then((webhooks) => {
@@ -355,8 +356,8 @@ class CallStuff {
                   // TODO make this more configurable -- EVERYWHERE
                   if ((webhook.targetUrl == ourUrl) &&
                       ((webhook.resource == "calls") || (webhook.resource == "callMemberships")) && 
-                      (webhook.secret.includes(auth_info.roomId)) &&
-                      (webhook.name.includes(auth_info.person.id))) {
+                      (webhook.secret.includes(roomId)) &&
+                      (webhook.name.includes(personId))) {
                     self.webex_sdk.webhookRemove(webhook.id);
                   }
                 });
@@ -369,11 +370,11 @@ class CallStuff {
         roomId + ': ' + e.message));
 
     // Delete the info in the local copy too
-    for(var i = this.myUserAuthorizations.length; i--;) {
-      if (this.myUserAuthorizations[i].roomId === roomId) {
-        this.myUserAuthorizations.splice(i, 1);
-      } 
-    }
+    // for(var i = this.myUserAuthorizations.length; i--;) {
+    //   if (this.myUserAuthorizations[i].roomId === roomId) {
+    //     this.myUserAuthorizations.splice(i, 1);
+    //   } 
+    // }
   }
 
   /**
@@ -382,13 +383,35 @@ class CallStuff {
    *
    * @function getUserForWebhook
    * @param {string} personId - personId returned in the name field of the webhook payload
-   * @param {string} roomId - roomId returned in the secret field of the webhook payload
+   * @param {string} secret - the webhook "secret" which includes our roomId
    */
-  getUserForWebhook(personId, roomId) {
-    return this.myUserAuthorizations.find(function(user) {
-      return((roomId.includes(user.roomId)) && (personId.includes(user.person.id)));
+  getUserForWebhook(personId, secret) {
+    // return this.myUserAuthorizations.find(function(user) {
+    //   return((roomId.includes(user.roomId)) && (personId.includes(user.person.id)));
+    // });
+    let self = this;
+    return new Promise(function(resolve, reject) {
+      let n = secret.lastIndexOf(" ");;
+      let roomId = secret.substring(n+1);
+      self.authDb.getAuthorizedUsers(roomId)
+        .then((authUsersArray) => {
+          if ((authUsersArray) && (authUsersArray.length)) {
+            for (let i=0; i<authUsersArray.length; i++) {
+              if (authUsersArray[i].person.id === personId) {
+                resolve(authUsersArray[i]);
+              }
+            }
+          } else {
+            resolve(null);
+          }
+        })
+        .catch((e) => {
+          reject('Failed to load authorized users from DB ' +
+        'for RoomID ' + roomId + ': ' + e.message);
+        });
     });
   }
+
 
   /**
    * Returns the names of the users in a space who have authorized
@@ -448,12 +471,12 @@ class CallStuff {
         message = {
           'roomId': auth_info.roomId
         };
-        if (webhook.event = 'created') {
+        if (webhook.event === 'created') {
           message.markdown = personName + ' (webhook.createdBy) got a calls:created event\n\n.' + 
                             actorName + ' (webhoook.actorId) started a call.\n\nStatus: '+ 
                             webhook.data.status +
                             '\n```\n' + JSON.stringify(webhook, null, 2); // make it pretty 
-        } else if (webhook.event = 'updated') {
+        } else if (webhook.event == 'updated') {
           message.markdown = personName + ' (webhook.createdBy) got a calls:updated event\n\n.' +
                              actorName +' (webhook.actorId) updated a call.\n\nStatus: '+ 
                             webhook.data.status +

@@ -65,7 +65,8 @@ flint.on('spawn', function(bot){
     adminsBot = bot;
   }
   // Load any existing Authorized User info into memory
-  callStuff.loadUsersFromDB(bot.room.id);
+  // TODO - modify this so it refreshes a token
+  //callStuff.loadUsersFromDB(bot.room.id);
   if(flint.initialized) {
     // Notify admin if the bot was added to a new room.     
     if (adminsBot) {
@@ -202,6 +203,8 @@ flint.hears(/.*/, function(bot, trigger) {
   let text = trigger.text;
   if (!responded) {
     console.log("Got an un-handled message to my bot:" + text);
+    bot.say('I don\'t know the command ' + text +
+      'Send me a **/help** message to see my commands');
   }
   responded = false;
   //console.log(trigger);
@@ -228,14 +231,24 @@ app.post('/callsWebhook', function (req, res) {
     console.error('Can\'t find person and roomID in webhook data: ' + req.body);
     res.send('Ignoring.');
   }
-  let auth_info = callStuff.getUserForWebhook(webhook.name, webhook.secret);
-  if ((!auth_info) || (!auth_info.access_token)) {
-    console.error('Can\'t find user info for webhook data: ' + 
-      JSON.stringify(webhook, null, 2));
-    return res.send('Ignoring.');
-  }
-  res.send('Posting to Webex Teams Room');
-  callStuff.postWebhookMessage(auth_info, webhook);
+  // let auth_info = callStuff.getUserForWebhook(webhook.name, webhook.secret);
+  // if ((!auth_info) || (!auth_info.access_token)) {
+  //   console.error('Can\'t find user info for webhook data: ' + 
+  //     JSON.stringify(webhook, null, 2));
+  //   return res.send('Ignoring.');
+  // }
+  callStuff.getUserForWebhook(webhook.createdBy, webhook.secret)
+    .then((auth_info) => {
+      if (!auth_info) {throw new Error('No authorized user for this room, person combo');}
+      res.send('Posting to Webex Teams Room');
+      callStuff.postWebhookMessage(auth_info, webhook);    
+    })
+    .catch((e) => {
+      console.error('Can\'t find user info for webhook data: ' + 
+        JSON.stringify(webhook, null, 2));
+      console.error(e.message);
+      res.send('Ignoring.');
+    });
 });
 
 // Basic liveness test
