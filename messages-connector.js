@@ -52,6 +52,7 @@ class MessageStuff {
     let message = {};
     let actorName = '';
     let personName = '';
+    let room = {};
     let self = this;
     try {
       await lock.wait();  
@@ -63,6 +64,9 @@ class MessageStuff {
       personName = person.displayName;
       person = await self.webex_sdk.personGet(webhook.actorId); // The calls actor
       actorName = person.displayName;
+      if (webhook.data.roomId) {
+        room = await self.webex_sdk.roomGet(webhook.data.roomId);
+      }
 
       // Format the message and send the message
       message = {
@@ -70,12 +74,18 @@ class MessageStuff {
       };
       if (webhook.event === 'created') {
         message.markdown = personName + ' (webhook.createdBy) got a calls:created event\n\n' + 
-                          actorName + ' (webhoook.actorId) started a call.\n\nStatus: '+ 
-                          webhook.data.status;
+                          actorName + ' (webhoook.actorId) started a call';
+        if (room) {
+          message.markdown += ' in the "' + room.title + '" space';
+        }
+        message.markdown += '.\n\nStatus: '+ webhook.data.status;
       } else if (webhook.event == 'updated') {
         message.markdown = personName + ' (webhook.createdBy) got a calls:updated event\n\n' +
-                            actorName +' (webhook.actorId) updated a call.\n\nStatus: '+ 
-                          webhook.data.status;
+                            actorName +' (webhook.actorId) updated a call';
+        if (room) {
+          message.markdown += ' in the "' + room.title + '" space';
+        }
+        message.markdown += '.\n\nStatus: '+ webhook.data.status;
       } else {
         throw new Error('Got unexpected calls resource webhook with event type: ' + webhook.event);
       }
