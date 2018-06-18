@@ -4,139 +4,34 @@
  * This module handles the setup and maintanance for each authorized user
  * who wants to get details about their calls and callmembership events
  * 
+ * It also implements the functions to post messages to a space on the
+ * authorizing user's behalf when they receive webhooks
+ * 
  * JP Shipherd 6/07/2018
  */
-
-
-const request = require('request');
-const when = require('when');
 
 // SDK library for calling Webex Teams
 const nodeSparky = require('node-sparky');
 
-// Module for managing authorization info stored in a mongo db
-const AuthorizationDB = require('./authorization-db.js');
+// We use a semiphore to ensure just one user auth is interacting
+// with the webex sdk at a time
+let Semaphore = require('semaphore-async-await');
+const lock = new Semaphore.default(1);
+
+// Helper object for sending messages on behalf of a user
+let MessageStuff = require('./messages-connector.js');
 
 class CallStuff {
-  constructor(config) {
-//    this.myUserAuthorizations = [];
+  constructor(config, authDb) {
     this.config = config;
-    this.authDb = new AuthorizationDB();
+    this.authDb = authDb;
     this.webex_sdk = new nodeSparky({
+      // We init with the bot's token but in practice
+      // we'll set this to the authorizing user's token
+      // when we are doing something on their behalf
       token: config.token
     });
-
-  }
-
-
-  /**
-   * Do the back and forth with the spark platform to get the authorization
-   * to register webhooks and post messages on a users behalf
-   *
-   * @function oAuthDance
-   * @param {Object} req - request object from OAuth link
-   * @param {Object} res - response to send
-   * @param {Object} flint - flint object
-   * 
-   * @returns {Promise} -- of an object with the authentication info and bot instance
-   *                      from the webex teams space where the user authentication from
-   *                      -- or reject when error occurs
-   * 
-   * side effect -- sends response under error conditions
-   */
-  oAuthDance(req, res, flint) {
-    let self = this;
-    return new Promise(function(resolve, reject) {
-      // Did the user decline
-      if (req.query.error) {
-        if (req.query.error == "access_denied") {
-          console.log("user declined, received err: " + req.query.error);
-          res.send("<h1>OAuth Integration could not complete</h1><p>Got your NO, ciao.</p>");
-        }
-        if (req.query.error == "invalid_scope") {
-          console.log("wrong scope requested, received err: " + req.query.error);
-          res.send("<h1>OAuth Integration could not complete</h1><p>The application is requesting an invalid scope, Bye bye.</p>");
-        }
-        if (req.query.error == "server_error") {
-          console.log("server error, received err: " + req.query.error);
-          res.send("<h1>OAuth Integration could not complete</h1><p>Cisco Spark sent a Server Error, Auf Wiedersehen.</p>");
-        }
-        console.log("received err: " + req.query.error);
-        res.send("<h1>OAuth Integration could not complete</h1><p>Error case not implemented, au revoir.</p>");
-        reject(new Error(req.query.error));
-      }
-
-      // Make sure that this request came from a valid Webex Space where our bot is
-      // This won't work in Flint 5.   Will need to create a local copy of this info
-      let roomId = req.query.state;
-      let bot = flint.bots.find(function(bot) {return(bot.room.id === roomId);});
-      if (!bot) {
-        res.send('<h1>OAuth Integration could not complete</h1><p>'+
-                'You can only authorization the Calls Helper when you click on a link ' +
-                'supplied by the Calls Helper bot in a Webex Teams Space');
-        reject(new Error('Could not find a bot for Webex Teams room associated with OAuth link'));
-      }
-
-      /*  Take the code passed in here and submit it for an auth token */
-
-      var options = { method: 'POST', 
-        url: 'https://api.ciscospark.com/v1/access_token',
-        headers: 
-        { 'cache-control': 'no-cache',
-          'content-type': 'application/x-www-form-urlencoded' },
-        form: 
-        { grant_type: 'authorization_code',
-          client_id: self.config.client_id,
-          client_secret: self.config.client_secret,
-          //code: 'ZDcyYTAxOWYtYjFjMy00N2M4LTg5NDktOTVhMGUxZTkyYzJlZDk0YjQ5MTgtMWM3',
-          code: req.query.code,
-          redirect_uri: self.config.webhookUrl + '/auth'
-
-        } 
-      };
-      // options.url is 'https://api.ciscospark.com/v1/access_token',
-      request(options, function (error, response, body) {
-        if (error) {
-          console.error("Error attemptig to retreive access & refresh tokens: "+ error.message);
-          res.send("<h1>OAuth Integration could not complete</h1><p>Sorry, could not retreive your access token. Try again...</p>");
-          reject(error);
-        }
-        if (response.statusCode != 200) {
-          console.error("access token not issued with status code: " + response.statusCode);
-          switch (response.statusCode) {
-            case 400:
-              var responsePayload = JSON.parse(response.body);
-              res.send("<h1>OAuth Integration could not complete</h1><p>Bad request. <br/>" + responsePayload.message + "</p>");
-              break;
-            case 401:
-              res.send("<h1>OAuth Integration could not complete</h1><p>OAuth authentication error. Ask the service contact to check the secret.</p>");
-              break;
-            default:
-              res.send("<h1>OAuth Integration could not complete</h1><p>Sorry, could not retreive your access token. Try again...</p>");
-              break;
-          }
-          if (response.statusMessage) {
-            reject(new Error('https://api.ciscospark.com/v1/access_token returned ' + 
-                              response.statusMessage));
-          } else {
-            reject(new Error('https://api.ciscospark.com/v1/access_token returned ' + 
-                              response.statusMessage));
-          }
-        }
-
-        // OK we got a response make sure its good and return it
-        var auth_info = JSON.parse(body);
-        if ((!auth_info) || (!auth_info.access_token)) {
-          res.send("<h1>OAuth Integration could not complete</h1><p>Sorry, could not retreive your access token. Try again...</p>");
-          reject(new Error('Webex returned invalid access_token object'));
-        }
-        auth_info.bot = bot;
-        auth_info.roomId = roomId;
-        auth_info.roomTitle = bot.room.title;
-        // TODO validate that auth_info has the exptected body
-        resolve(auth_info);
-      });
-    });
+    this.messageStuff = new MessageStuff(this.webex_sdk);
   }
 
   /**
@@ -146,7 +41,7 @@ class CallStuff {
    * @function setupUser
    * @param {Object} req - request object from OAuth link
    * @param {Object} res - response to send
-   * @param {Object} auth_info - Details about the user who just authorized us
+   * @param {Object} authInfo - Details about the user who just authorized us
    * 
    * @returns {Object} -- an object with the authentication info and bot instance
    *                      from the webex teams space where the user authentication from
@@ -154,105 +49,26 @@ class CallStuff {
    * 
    * side effect -- sends response under error conditions
    */
-  setupUser(req, res, auth_info) {
+
+  setupUser(req, res, authInfo) {
     let self = this;
     return new Promise(function(resolve, reject) {
-      // before we go into our promise chain lets create the webhook json
-      auth_info.webhookIds = [];
-      let callsWebhookOptions = {
-        resource: 'calls',
-        event: 'created',
-        targetUrl: self.config.webhookUrl + '/callsWebhook',
-        name: 'Something went wrong if you see this' // Will be set below
-      };
-      
-      //Set this users token in our SDK for these calls
-      self.webex_sdk.setToken(auth_info.access_token)
-        // First lets find out who this is
-        .then(() => self.webex_sdk.personMe())
-        // Then get the info for the room associated with this authorization
-        .then((person) => {
-          auth_info.person = person;
-          callsWebhookOptions.name = 'Authorized by '+person.displayName + 
-                                     ': '+ auth_info.person.id;
-          return self.webex_sdk.membershipsGet({ "roomId": auth_info.roomId });
-        })
-        .then(memberships => {
-          // Make sure the authorizer is in the space we'll be posting to  
-          let user_found = false;
-          for(var i = 0, len = memberships.length; i < len; i++) {
-            if (memberships[i].personId == auth_info.person.id) {
-              user_found = true;
-              break;
-            }
-          }
-          if (!user_found) {
-            auth_info.bot.say("I just got an authorization but the user is not a member of this space! Try again...");
-            postInstructions(auth_info.bot, false, true);
-            throw new Error('Authorizing user is not a member of the Webex Teams space associated with the OAuth link.');
-          }
-          // OK we have a valid user who is in the space that generated the auth link.  
-          // First lets get rid of any previously registered webhooks
-          return self.webex_sdk.webhooksGet()
-            .then((webhooks) => {
-              let ourUrl = self.config.webhookUrl + '/callsWebhook';
-              when.map(webhooks, webhook => {
-                // TODO make this more configurable -- EVERYWHERE
-                if ((webhook.targetUrl == ourUrl) &&
-                    ((webhook.resource == "calls") || (webhook.resource == "callMemberships")) && 
-                    (webhook.secret.includes(auth_info.roomId)) &&
-                    (webhook.name.includes(auth_info.person.id))) {
-                  self.webex_sdk.webhookRemove(webhook.id);
-                }
-              });
-            })
-            .then(() => {
-              // Now add the new webhooks..
-              // We register a webhook per user, per room, using the secret for the room
-              self.webex_sdk.webhookSecret = 'For Space: ' +auth_info.roomTitle + 
-                                              ', ID: ' + auth_info.roomId;  
-              return self.webex_sdk.webhookAdd(callsWebhookOptions);
-            })
-            .then((webhook) => {
-              auth_info.webhookIds.push(webhook.id);
-              callsWebhookOptions.event = 'updated';
-              return self.webex_sdk.webhookAdd(callsWebhookOptions);
-            })
-            .then((webhook) => {
-              auth_info.webhookIds.push(webhook.id);
-              callsWebhookOptions.resource = 'callMemberships';
-              callsWebhookOptions.event = 'created';
-              return self.webex_sdk.webhookAdd(callsWebhookOptions);
-            })
-            .then((webhook) => {
-              auth_info.webhookIds.push(webhook.id);
-              callsWebhookOptions.event = 'updated';
-              return self.webex_sdk.webhookAdd(callsWebhookOptions);
-            })
-            .then((webhook) => {
-              auth_info.webhookIds.push(webhook.id);
-              callsWebhookOptions.event = 'deleted';
-              return self.webex_sdk.webhookAdd(callsWebhookOptions);
-            })
-            .then((webhook) => {
-              auth_info.webhookIds.push(webhook.id);
-              resolve(auth_info);
-            })
-            .catch((e) => {
-              console.log(e.message);
-              auth_info.bot.say('Failed to setup webhooks for '+auth_info.person.displayName +
-                      '\n\nMake sure they are in this space and that the correct toggles are enabled');
-              res.send("<h1>OAuth Integration could not complete</h1><p>" + 
-                        "Check the Webex Teams space that provided this link for more details.</p>");
-              reject(e);
-            });
+      setupUserWebhooks(authInfo, self.config, self.webex_sdk)
+        .then((updatedAuthInfo) => {
+          resolve(updatedAuthInfo);
         })
         .catch((e) => {
-          // I think this catch will be triggered if the membership call fails
-          auth_info.bot.say('The users who attempted to authorixe me: '+auth_info.person.displayName +
-          ' is not a member of this space.  Only space members can use this link');
+          console.error(e.message);
+          if (e.message == 'Authorizing user is not a member of the Webex Teams space associated with the OAuth link.') {
+            authInfo.bot.say('The user who attempted to authorize me: '+authInfo.person.displayName +
+            ', is not a member of this space.  Only space members can use this link.\n'+
+            'Type **/help** to see the link again.');
+          } else {
+            authInfo.bot.say('Failed to setup webhooks for '+authInfo.person.displayName +
+                    '\n\nMake sure they are in this space and that the the user is authorized to use the calls API');
+          }
           res.send("<h1>OAuth Integration could not complete</h1><p>" + 
-                    "Check the Webex Teams space that provided this link for more details.</p>");
+            "Check the Webex Teams space that provided this link for more details.</p>");
           reject(e);
         });
     });
@@ -261,77 +77,16 @@ class CallStuff {
   /**
    * Sends a message on behalf of the Authenticating user back to the 
    * Webex Teams space where the authentication link was first displayed
+   * when setup is complete
    *
-   * @function sendAuthorizationCompleteMessage
-   * @param {Object} auth_info - Details about the user who just authorized us
+   * @function sendAuthCompleteMessage
+   * @param {Object} authInfo - Details about the user who just authorized us
    */
-  sendAuthorizationCompleteMessage(auth_info) {
-    let message = {
-      'roomId': auth_info.roomId,
-      text: auth_info.person.displayName + 
-          ' has authorized me to post calls webhook data to this space.\n\n' +
-          'Make a call and see what happens...'
-    };
-    let self = this;
-    // Set the token for the user who we are sending this message for (just in case)
-    return self.webex_sdk.setToken(auth_info.access_token)        
-      // And post a message in the space on behalf of the authentication user
-      .then(() => self.webex_sdk.messageSend(message))
-      .catch((e) => reject(e));
+  sendAuthCompleteMessage(authInfo) {
+    this.messageStuff.sendAuthorizationCompleteMessage(authInfo, lock);
   }
 
-  /**
-   * Adds an instance of the AuthUserState data when a new user
-   * authorizes our bot/integration
-   *
-   * @function setupNewUser
-   * @param {Object} auth_info - Details about the user who just authorized us
-   */
-  setupNewUser(auth_info) {       // arrow function binds the "this"
-    let self = this;
-    return new Promise(function(resolve) {
-      // Strip out some of the non-needed info in the auth_info
-      if (auth_info.person) {
-        let person = auth_info.person;
-        auth_info.person = {};
-        auth_info.person.id = person.id;
-        auth_info.person.displayName = person.displayName;
-      }
-      if (auth_info.bot) {
-        delete auth_info.bot;
-      }
-      //self.myUserAuthorizations.push(auth_info);
-
-      // Store this in a db and return our promise of a new auth_info
-      self.authDb.saveAuthInfo(auth_info)
-        .then(() => resolve(auth_info))
-        .catch((e) => console.error('Failed saving authorization information ' +
-          'for user '+auth_info.person.displayName + ' in space "' 
-          + auth_info.roomTitle + '": ' + e.message));
-    });
-  }
-
-  /**
-   * Load any authorized user information stored in the database
-   * when our bot spawns in a new room
-   *
-   * @function loadUsersFromDB
-   * @param {string} roomId - roomId returned in the secret field of the webhook payload
-   */
-  loadUsersFromDB(roomId) {
-    this.authDb.getAuthorizedUsers(roomId)
-      .then((authUsersArray) => {
-        if ((authUsersArray) && (authUsersArray.length)) {
-          for (let i=0; i<authUsersArray.length; i++) {
-            this.myUserAuthorizations.push(authUsersArray[i]);
-          }
-          //TODO -- this is a good opportunity to refresh the tokens
-        }
-      })
-      .catch((e) => console.error('Failed to load authorized users from DB ' +
-      'for RoomID ' + roomId + ': ' + e.message));
-  }
-
+  
   /**
    * Delete all webhooks registered for authorized users and 
    * delete their authorization data in the database
@@ -344,37 +99,34 @@ class CallStuff {
     this.authDb.getAuthorizedUsers(roomId)
       .then((authUsersArray) => {
         if ((authUsersArray) && (authUsersArray.length)) {
-          for (let i=0; i<authUsersArray.length; i++) {
-            // Its not clear that this is working
-            // TODO see if I can use await to fix this
-            let personId = authUsersArray[i].person.id;
-            this.webex_sdk.setToken(authUsersArray[i].access_token)
-              .then(() => self.webex_sdk.webhooksGet())
-              .then((webhooks) => {
-                let ourUrl = self.config.webhookUrl + '/callsWebhook';
-                when.map(webhooks, webhook => {
-                  // TODO make this more configurable -- EVERYWHERE
-                  if ((webhook.targetUrl == ourUrl) &&
-                      ((webhook.resource == "calls") || (webhook.resource == "callMemberships")) && 
-                      (webhook.secret.includes(roomId)) &&
-                      (webhook.name.includes(personId))) {
-                    self.webex_sdk.webhookRemove(webhook.id);
-                  }
-                });
-              });
-          }
+          self.authDb.deleteAuthorizedUsers(roomId)
+            .catch((e) =>console.error('Unable to delete authorized users from space: ' +
+              roomId + ': ' + e.message));
+          cleanupAllUsers(authUsersArray, self.webex_sdk);
         }
       })
-      .then(() => this.authDb.deleteAuthorizedUsers(roomId))
-      .catch((e) =>console.error('Unable to delete authorized users from space: ' +
+      .catch((e) => console.error('Failed lookup of users in space:'+
         roomId + ': ' + e.message));
+  }
 
-    // Delete the info in the local copy too
-    // for(var i = this.myUserAuthorizations.length; i--;) {
-    //   if (this.myUserAuthorizations[i].roomId === roomId) {
-    //     this.myUserAuthorizations.splice(i, 1);
-    //   } 
-    // }
+  /**
+   * Delete webhooks and DB info for a single user
+   *
+   * @function deleteOneAuthoritization
+   * @param {string} roomId - roomId to remove Auth info from
+   * @param {string} personId - personId to remove
+   * @param {bool} userLeft - set to True when called because user left a space
+   */
+  async deleteOneAuthoritization(roomId, personId, userLeft=false) {
+    let self = this;
+    let authInfo = await this.authDb.deleteOneAuthorizedUser(roomId, personId);
+    if (authInfo) {
+      await lock.wait();
+      await cleanupUser(authInfo, self.webex_sdk, userLeft);
+      lock.signal();    
+    } else {
+      throw new Error('Person is not in Space');
+    }
   }
 
   /**
@@ -382,17 +134,26 @@ class CallStuff {
    * personId, roomId combination
    *
    * @function getUserForWebhook
-   * @param {string} personId - personId returned in the name field of the webhook payload
    * @param {string} secret - the webhook "secret" which includes our roomId
+   * @param {string} personId - personId returned in the name field of the webhook payload
    */
-  getUserForWebhook(personId, secret) {
-    // return this.myUserAuthorizations.find(function(user) {
-    //   return((roomId.includes(user.roomId)) && (personId.includes(user.person.id)));
-    // });
+  getUserForWebhook(secret, personId) {
+    let n = secret.lastIndexOf(" ");;
+    let roomId = secret.substring(n+1);
+    return this.getUserForRoom(roomId, personId);
+  }
+
+  /**
+   * Returns the stored User Authorization info for a particular
+   * personId, roomId combination
+   *
+   * @function getUserForRoom
+   * @param {string} roomId - the webhook "secret" which includes our roomId
+   * @param {string} personId - personId returned in the name field of the webhook payload
+   */
+  getUserForRoom(roomId, personId) {
     let self = this;
     return new Promise(function(resolve, reject) {
-      let n = secret.lastIndexOf(" ");;
-      let roomId = secret.substring(n+1);
       self.authDb.getAuthorizedUsers(roomId)
         .then((authUsersArray) => {
           if ((authUsersArray) && (authUsersArray.length)) {
@@ -401,6 +162,7 @@ class CallStuff {
                 resolve(authUsersArray[i]);
               }
             }
+            resolve(null);
           } else {
             resolve(null);
           }
@@ -412,7 +174,6 @@ class CallStuff {
     });
   }
 
-
   /**
    * Returns the names of the users in a space who have authorized
    * our integration
@@ -421,11 +182,7 @@ class CallStuff {
    * @param {string} roomId - roomId returned in the secret field of the webhook payload
    */
   getAuthorizedUsersForRoom(roomId) {
-    return this.authDb.getAuthorizedUsers(roomId)
-      .catch((e) => {
-        console.log('getAuthorizedUsers error: '+e.message);
-        return new Promise.resolve(null);
-      });
+    return this.authDb.getAuthorizedUsers(roomId);
   }
 
   /**
@@ -436,172 +193,197 @@ class CallStuff {
    * @param {Object} auth_inf - details about the authorizing user and the room we are in
    * @param {Object} webhook - webhook data that was just received
    */
-  postWebhookMessage(auth_info, webhook) {
+  postWebhookMessage(authInfo, webhook) {
     if (webhook.resource == 'calls') {
-      this.postCallsWebhookMessage(auth_info, webhook);
+      this.messageStuff.postCallsWebhookMessage(authInfo, webhook, lock);
     } else if (webhook.resource == 'callMemberships') {
-      this.postCallMembershipsWebhookMessage(auth_info, webhook);
+      this.messageStuff.postCallMembershipsWebhookMessage(authInfo, webhook, lock);
     } else {
       console.error('Got unexpected webhook with resource type: '+webhook.resource);
     }
   }
 
   /**
-   * Post a message, on behalf of the authorizing user about the 
-   * calls resource webhook that was recieved
+   * Configure if the webhook messages are terse or full
    *
-   * @function postWebhookMessage
-   * @param {Object} auth_inf - details about the authorizing user and the room we are in
-   * @param {Object} webhook - webhook data that was just received
+   * @function setTerseMode
+   * @param {Object} bot - bot for the room that /tersemode was sent to
+   * @param {string} trigger - info on who sent terseMOde
+   * @param {boolean} mode - mode to set
    */
-  postCallsWebhookMessage(auth_info, webhook) {
-    let message = {};
-    let actorName = '';
-    let personName = '';
+  setTerseMode(bot, trigger, mode) {
     let self = this;
-    // Set the token for the user who we are sending this message for (just in case)
-    self.webex_sdk.setToken(auth_info.access_token)
-      .then(() => self.webex_sdk.personGet(webhook.createdBy)) // our authorized user
-      .then((person) => {
-        personName = person.displayName;
-        return self.webex_sdk.personGet(webhook.actorId); // The calls actor
-      })
-      .then((person) => {
-        actorName = person.displayName;
-        message = {
-          'roomId': auth_info.roomId
-        };
-        if (webhook.event === 'created') {
-          message.markdown = personName + ' (webhook.createdBy) got a calls:created event\n\n.' + 
-                            actorName + ' (webhoook.actorId) started a call.\n\nStatus: '+ 
-                            webhook.data.status +
-                            '\n```\n' + JSON.stringify(webhook, null, 2); // make it pretty 
-        } else if (webhook.event == 'updated') {
-          message.markdown = personName + ' (webhook.createdBy) got a calls:updated event\n\n.' +
-                             actorName +' (webhook.actorId) updated a call.\n\nStatus: '+ 
-                            webhook.data.status +
-                            '\n```\n' + JSON.stringify(webhook, null, 2); // make it pretty 
-        } else {
-          throw new Error('Got unexpected calls resource webhook with event type: ' + webhook.event);
-        }
-      })  
-      .then(() => self.webex_sdk.messageSend(message))
-      .catch((e) => console.error('Error sending webhook info for ' +
-                                  auth_info.person.displayName + 'to space: ' +
-                                  e.message));
-
+    return new Promise(function(resolve) {
+      self.getUserForRoom(bot.room.id, trigger.personId)
+        .then((authInfo) => {
+          if (authInfo) {
+            authInfo.terseMode = mode;
+            self.authDb.saveAuthInfo(authInfo);
+          } else {
+            bot.say('Can\'t find info for ' + trigger.personDisplayName +
+              '. Have you authorized me?  Type **/help** for an authorization link.');
+            throw new Error('No-Auth');
+          }
+        })
+        .then(() => {
+          if (mode) {
+            bot.say('I will only post summaries of webhook events for ' + trigger.personDisplayName);
+          } else {
+            bot.say('I will only post full details webhook events ' + trigger.personDisplayName);
+          }
+          resolve(mode);
+        })
+        .catch((e) => {
+          console.error('Unable to update terseMode for ' + trigger.personDisplayName +
+            ' in room: ' + trigger.roomTitle + ': '+ e.message);
+          if (e.message != 'No-Auth') {
+            bot.say('Sorry. I can\'t change this setting right now.');
+          }
+          resolve(mode);
+        });
+    });    
   }
 
-  /**
-   * Post a message, on behalf of the authorizing user about the 
-   * callMemberships resoruce webhook that was recieved
-   *
-   * @function postWebhookMessage
-   * @param {Object} auth_inf - details about the authorizing user and the room we are in
-   * @param {Object} webhook - webhook data that was just received
-   */
-  postCallMembershipsWebhookMessage(auth_info, webhook) {
-    let message = {};
-    let participantName = '';
-    let personName = '';
-    let self = this;
-    // Set the token for the user who we are sending this message for (just in case)
-    self.webex_sdk.setToken(auth_info.access_token)
-      .then(() => self.webex_sdk.personGet(webhook.createdBy)) // our authorized user
-      .then((person) => {
-        personName = person.displayName;
-        return self.webex_sdk.personGet(webhook.data.personId); // The actor
-      })
-      .then((person) => {
-        participantName = person.displayName;
-        message = {
-          'roomId': auth_info.roomId,
-          'markdown': personName + ' (webhook.createdBy) got a ' + webhook.resource + 
-                      ':' + webhook.event + ' event.\n\nNew Status for ' + 
-                      participantName + ' (webhook.data.personId): '+ 
-                      webhook.data.status +
-                      '\n```\n' + JSON.stringify(webhook, null, 2)
-        };
-      })  
-      .then(() => self.webex_sdk.messageSend(message))
-      .catch((e) => console.error('Error sending webhook info for ' +
-                                  auth_info.person.displayName + 'to space: ' +
-                                  e.message));
-
-  }
-
-  //   /**
-//    * Cleans up any number info associated with a space and removes the
-//    * array entries to correlate the bot with the SpaceNumber info
-//    *
-//    * @function removeBotAndSpaceNumber
-//    * @param {Object} bot - Reference to the bot associated with a space
-//    */
-//   removeBotAndSpaceNumber(bot, cb) {
-//     this.removeNumFromSpace(bot, function(err, spaceNumberState) {
-//       if (err) {console.log(err.message);}
-//       else {spaceNumberState.cleanup();}
-//       //remove the bot ID from the room element arrant
-//       myBotRoomIds.splice(bot.room.id, 1);
-//       bot.forget('spaceNumberState')
-//         .then(function() {
-//           cb(null);
-//         })
-//         .catch(function(err) {
-//           cb(err);
-//         });
-//     });
-//   }
-//   /**
-//    * This method releases a tropo phone number from a space
-//    * It might be called after X days with no number activity
-//    * Or when a bot is removed from a space
-//    *
-//    * @function removeNumFromSpace
-//    * @private
-//    * @param {Object} bot - Flint Bot Object
-//    * @param {Function} callback - function to call when numbers is available
-//    */
-//   removeNumFromSpace(bot, cb) {
-//     bot.recall('spaceNumberState')
-//       .then(function(spaceNumberState) {
-//         if (spaceNumberState.spaceNumberData.myNumber) {
-//           //Since there is no number associated with this space this must be the time
-//           //the bot has been asked to do anything PSTN call or SMS related 
-//           var num = spaceNumberState.spaceNumberData.myNumber;
-//           console.log('Asking Tropo release '+num+' whih is associated with ' + bot.room.title);
-//           //TODO Modify to remove the PAPI call to remove this.
-//           var tropoPapiNumberUrl = papiUrl + '/applications/' + tropoAppId + '/addresses/number/'+num;
-//           var request = require("request");
-//           var options = {
-//           method: 'DELETE',
-//             url: tropoPapiNumberUrl,
-//             headers: {
-//                 'cache-control': 'no-cache',
-//                 authorization: 'Basic anBzaGlwaGVyZDpnTDg3UlpfcDZDYUY=',
-//                 'content-type': 'application/json'
-//             },
-//             body: { type: 'number' },
-//             json: true
-//           };
-//           request(options, function(error, response, body) {
-//             if (error) {
-//               return cb(error);
-//             }
-//             return cb(null, spaceNumberState);
-//           });
-//         } else {
-//           console.log('No phone number associated with room: '+bot.room.title);
-//           return cb(null, spaceNumberState);  
-//         }
-//       })
-//       .catch(function(err) {
-//         console.log('No space number info was set up for room: '+bot.room.title);
-//         return cb(err);
-//       });
-//   }
-// }
-
-}
+}  // end of module
 
 module.exports = CallStuff;
+
+/**
+ * Internal functions used by the module
+ * We use async/await functions to try to ensure that any sdk methods we are 
+ * calling after setting the token are called before the token is set for another user
+ */
+async function setupUserWebhooks(authInfo, config, sdk) {
+  // before we go into our promise chain lets create the webhook json
+  authInfo.webhookIds = [];
+  let callsWebhookOptions = {
+    targetUrl: config.webhookUrl + '/callsWebhook',
+  };
+  try {
+    await lock.wait();
+    let updatedAuthInfo = await doSetup(authInfo, config, callsWebhookOptions, sdk);
+    lock.signal();
+    return(updatedAuthInfo);
+  } catch (e) {
+    lock.signal();
+    throw e;
+  }
+}
+ 
+async function doSetup(authInfo, config, callsWebhookOptions, sdk) {
+  //Set this users token in our SDK for these calls
+  await sdk.setToken(authInfo.access_token);
+  // First lets find out who this is
+  let person = await sdk.personMe();
+  authInfo.person = person;
+
+  let memberships = [];
+  try {
+    memberships = await sdk.membershipsGet({ "roomId": authInfo.roomId });
+  } catch(e) {
+    throw new Error('Authorizing user is not a member of the Webex Teams space associated with the OAuth link.');
+  }
+  // Make sure the authorizer is in the space we'll be posting to  
+  let user_found = false;
+  for(var i = 0, len = memberships.length; i < len; i++) {
+    if (memberships[i].personId == authInfo.person.id) {
+      user_found = true;
+      break;
+    }
+  }
+  if (!user_found) {
+    throw new Error('Authorizing user is not a member of the Webex Teams space associated with the OAuth link.');
+  }
+  // OK we have a valid user who is in the space that generated the auth link.  
+  // First lets get rid of any previously registered webhooks
+  let webhooks = await sdk.webhooksGet();
+  let ourUrl = config.webhookUrl + '/callsWebhook';
+  for (let i=0; i<webhooks.length; i++) {
+    let webhook = webhooks[i];
+    if ((webhook.targetUrl == ourUrl) &&
+        ((webhook.resource == "calls") || (webhook.resource == "callMemberships")) && 
+        (webhook.secret.includes(authInfo.roomId)) &&
+        (webhook.name.includes(authInfo.person.id))) {
+      await sdk.webhookRemove(webhook.id);
+    }
+  }
+
+  // Add info about the user and space in the webhook envelope for readability
+  callsWebhookOptions.name = 'Authorized by '+person.displayName + 
+    ': '+ authInfo.person.id;
+  // sparky sdk doesn't provide an accessor for this or respect it if it is passed in
+  sdk.webhookSecret = 'For Space: ' +authInfo.roomTitle + ', ID: ' + authInfo.roomId;  
+
+  // Now add the new webhooks..
+  // We register a webhook per user, per room, using the secret for the room
+  callsWebhookOptions.resource = 'calls';
+  callsWebhookOptions.event = 'created';
+  let webhook = await sdk.webhookAdd(callsWebhookOptions);
+  authInfo.webhookIds.push(webhook.id);
+  callsWebhookOptions.event = 'updated';
+  webhook = await sdk.webhookAdd(callsWebhookOptions);
+  authInfo.webhookIds.push(webhook.id);
+  callsWebhookOptions.resource = 'callMemberships';
+  callsWebhookOptions.event = 'created';
+  webhook = await sdk.webhookAdd(callsWebhookOptions);
+  authInfo.webhookIds.push(webhook.id);
+  callsWebhookOptions.event = 'updated';
+  webhook = await sdk.webhookAdd(callsWebhookOptions);
+  authInfo.webhookIds.push(webhook.id);
+  callsWebhookOptions.event = 'deleted';
+  webhook = await sdk.webhookAdd(callsWebhookOptions);
+  authInfo.webhookIds.push(webhook.id);
+
+  // All five webhooks are registered! Return the authInfo object
+  return(authInfo);
+}
+
+
+
+/**
+ * Process, one at a time, the deletion of all authorizations in a space
+ *
+ * @function cleanupAllUsers
+ * @param {Array} authUsersArray - array of user authorizations
+ * @param {Ojbect} sdk - the webex sdk
+ */
+async function cleanupAllUsers(authUsersArray, sdk) {
+  for (let i=0; i<authUsersArray.length; i++) {
+    await lock.wait();
+    await cleanupUser(authUsersArray[i], sdk);
+    lock.signal();
+  }
+}
+
+/**
+ * Delete all webhooks associated with the authorization
+ * Post a message that the authorization is being removed
+ *
+ * @function cleanupUser
+ * @param {Object} authInfo - Authorization details for a user
+ * @param {Ojbect} sdk - the webex sdk
+ */
+async function cleanupUser(authInfo, sdk, userLeft=false) {
+  let message = {
+    roomId: authInfo.roomId,
+    markdown: 'Will no longer post webhook information' + 
+              ' on behalf of ' + authInfo.person.displayName
+  };
+  try {
+    await sdk.setToken(authInfo.access_token);
+    // Clean up webhooks
+    for (let i=0; i<authInfo.webhookIds.length; i++) {
+      let webhookId = authInfo.webhookIds[i];
+      console.log('Attempting to delete webhook: '+webhookId);
+      await sdk.webhookRemove(webhookId);
+    }
+    // Post a message that the webhooks messages are off
+    if (!userLeft) {
+      await sdk.messageSend(message);
+    }
+  } catch(e) { 
+    console.error('Failed to cleanup '+ authInfo.person.displayName + 
+      ' in space ' +authInfo.roomTitle + ': '+ e.message);
+  }
+}
+
