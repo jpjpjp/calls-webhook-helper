@@ -75,8 +75,7 @@ flint.on("initialized", function() {
 
 flint.on('spawn', function(bot){
   // An instance of the bot has been added to a room
-  console.log('new bot spawned in room: ' + bot.room.title + ' with id: ' +
-    bot.room.id + '\nChecking for users who have previously authorized me...');
+  console.log('new bot spawned in room: ' + bot.room.title + ' with id: ' + bot.room.id);
   // We use the restart of the bot as an opportunity to refresh and
   // previously authorized access tokens 
   oAuthStuff.refreshTokensforRoom(bot.room.id);
@@ -118,18 +117,6 @@ flint.on('stop', function(id){
 flint.on('start', function(id){
   console.log('Got a flint start event for id: ' + id);
 });
-
-/* These methods are not currently used.   Was trying to understand what they do
-
-flint.on('personEnters', function(bot, person, id){
-  console.log('Got a flint personEnters event.');
-  // Check if the person entering is our helper user.  
-  var email = person.emails[0];
-  var name = person.displayName.split(' ')[0]; // reference first name
-  console.log('New person in space: ' + bot.room.title + ' is: ' + name + ", email: " + email);
-});
-
-*/
 
 flint.on('personExits', function(bot, person) {
   console.log('Got a flint personExits event.');
