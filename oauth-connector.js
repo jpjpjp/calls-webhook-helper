@@ -270,6 +270,7 @@ class OAuthStuff {
           let i = 0;
           when.map(authUsersArray, authInfo => {
             i += 1;
+            console.log('Updating Auth Token for  ' + reply.authInfoArray[0].roomTitle);
             self.refreshToken(authInfo)
               .then((newAuthInfo) => self.authDb.saveAuthInfo(newAuthInfo))
               .catch((e) => console.error(e.message));
