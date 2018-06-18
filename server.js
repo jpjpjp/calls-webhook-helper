@@ -75,15 +75,16 @@ flint.on("initialized", function() {
 
 flint.on('spawn', function(bot){
   // An instance of the bot has been added to a room
-  console.log('new bot spawned in room: %s with id: %s', bot.room.title, bot.room.id);
-  // Check if this instance is the one on one room with the admin
-  if (bot.isDirectTo === adminEmail) {
-    adminsBot = bot;
-  }
+  console.log('new bot spawned in room: ' + bot.room.title + ' with id: ' +
+    bot.room.id + '\nChecking for users who have previously authorized me...');
   // We use the restart of the bot as an opportunity to refresh and
   // previously authorized access tokens 
   oAuthStuff.refreshTokensforRoom(bot.room.id);
 
+  // Check if this instance is the one on one room with the admin
+  if ((!adminsBot) && (bot.isDirectTo === adminEmail)) {
+    adminsBot = bot;
+  }
   // Notify admin if the bot was added to a new room.     
   if(flint.initialized) {
     if (adminsBot) {
