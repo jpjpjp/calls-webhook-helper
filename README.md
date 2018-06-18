@@ -11,7 +11,7 @@ If your primary interest is to get up to speed on the calls and callMemberships 
 
 The bot will provide you with a link which will walk the user through an Authorization flow which asks for permission to register webhooks and post messages on the user's behalf.   Once authorized, make a call in a Webex Teams space where the user who authorized the integration is a member.  As call and callMemebership webhooks fire, the integration will post the details of this to the space where the bot was added.
 
-THis provides a quick and easy way to get familiar with how these webhooks work.
+This provides a quick and easy way to get familiar with how these webhooks work!
 
 ## Checklist to build and start the bot yourself
 
@@ -27,11 +27,11 @@ Prerequisites:
 
 - [ ] Create a Webex Teams Bot (save the API key): https://developer.ciscospark.com/add-bot.html.  
 
-- [ ] Create or use an existing Mongo Altas DB account and create a Database to save informationa about the authorized users.
+- [ ] Create or use an existing [Mongo Atlas DB](https://cloud.mongodb.com/) account and create a Database to save information about the authorized users. 
 
 - [ ] Sign up for nGrok and start it on your machine (save the port number and public web address): https://ngrok.com/download.   Alternately know the publically accesible URL and Port where you plan to run your bot.
 
-- [ ] Configure the bot Environment variable:
+- [ ] Configure the bot Environment variables:
 * WEBHOOK - the IP address where your application will run (ie: http://12356.ngrok.io)
 * TOKEN - the Auth token for your bot 
 * PORT - the Port that your server is listening on (would have been passed to ngrok if using that)
@@ -68,6 +68,8 @@ You can set these variables in your enviornment or in a mongo.json file.  If usi
 
 You can set these variables in your environment or in a config.json file.  If using environment varliables DON'T set them to upper case.  Use the casing described in the list above.
 
+- [ ] Download the dependencies with ```npm install```
+
 - [ ] Turn on your bot server with ```npm start```
 
 ## Using the bot
@@ -76,17 +78,18 @@ Once the bot is running simply add the bot to a space.   The bot will proactivel
 
 * **/help** will show help, including the link for members of the space to authorize the integration to register them for webhooks
 * **/deleteall** will delete all authorized users associated with the space and stop sending webhooks
+* **/deleteme** will delete any authorizations for the user who sent the message
 * **/tersemode on** will tell the integration to just post webhook summary information, 
 * **/tersemode off** will tell the bot to post the full webhook data (this is the default).
+* **/status** will provide a list of authorized users and the authorization link 
 
 If the bot is removed from a space it will delete all the authorizations associated with that space and stop posting webhook data
   
 ## Bot Admin User
 
-The bot can also notifies the author about when the bot is added to a new space.  If you would like to receive these messages set the following environemnt ADMIN_EMAIL to the email address of the Webex Teams account of the bot manager.
+The bot can also notify the author about when the bot is added to a new space.  If you would like to receive these messages set an environment variable ADMIN_EMAIL to the Webex Teams email address of the developer or admin.
 
 ## TODO
 I'd like to do the following some day:
-* Remove all the authorizations when a bot is removed from a space
-* Add a command to remove the authorization for just a single user
 * Add a command to delete the webhook related messages posted on a users behalf
+* Upon receiving a calls/updated event with a DISCONNNECTED status make a call to the /calls API and post the final disposition of the call.
