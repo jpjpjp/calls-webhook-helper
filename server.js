@@ -68,8 +68,8 @@ flint.on("initialized", function() {
   // Configure a timer to refresh access tokens on a weekly basis 
   setInterval(function () {
     oAuthStuff.refreshAllTokens(flint);
-  //},  7 * 24 * 60 * 60000);   // Should fire once a week
-  },  5 * 60000);   // Should fire every five minutes
+  },  7 * 24 * 60 * 60000);   // Should fire once a week
+  //},  5 * 60000);   // Should fire every five minutes
 });
 
 
