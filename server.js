@@ -224,8 +224,10 @@ flint.hears(/(^| )\/deleteme( |.|$)/i, function(bot, trigger) {
 flint.hears(/(^| )\/tersemode.*$/i, function(bot, trigger) {
   flint.debug('Processing /tersemode Request for ' + bot.room.title);
   let text = '';
-  if (trigger.args.length == 3) {
+  if ((!bot.isDirect) && (trigger.args.length == 3)) {
     text = trigger.args[2];
+  } else if ((bot.isDirect) && (trigger.args.length == 2)) {
+    text = trigger.args[1];
   }
   if ((text) && (text.trim().toLowerCase() == 'on')) {
     callStuff.setTerseMode(bot, trigger, true);
@@ -249,7 +251,9 @@ flint.hears('/showjptheusers', function() {
 */
 flint.hears(/.*/, function(bot, trigger) {
   let text = trigger.text;
-  if (!responded) {
+  if ((!responded) && (!bot.isDirect)) {
+    // We don't do this in 1 on 1 spaces since we don't want to reply to 
+    // posts that the integration has made on the users behalf
     console.log("Got an un-handled message to my bot:" + text);
     bot.say('I don\'t know the command\n' + text +
       '\nSend me a **/help** message to see my commands');
