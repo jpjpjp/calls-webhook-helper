@@ -5,14 +5,6 @@ Secondly, it provides an integration that makes it easy for developers to become
 
 At the time of this writing the Webex Teams calling API is still in Early Field Trials and are not available to all users.  If you would like to be part of the EFT, contact your Cisco representative or post an issue to this project.
 
-## Using the bot/integration
-
-If your primary interest is to get up to speed on the calls and callMemberships webhooks this integration is currently hosted.  Simply add the calls-webhook-helper@webex.bot to a one on one Webex Teams space, or to a group space with people who are interested in seeing the webhook payloads.   
-
-The bot will provide you with a link which will walk the user through an Authorization flow which asks for permission to register webhooks and post messages on the user's behalf.   Once authorized, make a call in a Webex Teams space where the user who authorized the integration is a member.  As call and callMemebership webhooks fire, the integration will post the details of this to the space where the bot was added.
-
-This provides a quick and easy way to get familiar with how these webhooks work!
-
 ## Checklist to build and start the bot yourself
 
 Prerequisites:
